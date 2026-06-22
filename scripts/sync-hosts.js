@@ -15,21 +15,21 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const GITHUB520_URL = 'https://raw.hellogithub.com/hosts';
+const GITHUB520_URL = 'https://raw.githubusercontent.com/521xueweihan/GitHub520/main/hosts.json';
 const HOSTS_FILE = path.resolve(__dirname, '../src/hosts.js');
 
 /**
- * 从 URL 获取文本内容
+ * 从 URL 获取 JSON 内容
  * @param {string} url
- * @returns {Promise<string>}
+ * @returns {Promise<object>}
  */
-function fetchText(url) {
+function fetchJson(url) {
   return new Promise((resolve, reject) => {
     https
       .get(url, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // 处理重定向
-          fetchText(res.headers.location).then(resolve).catch(reject);
+          fetchJson(res.headers.location).then(resolve).catch(reject);
           return;
         }
         if (res.statusCode !== 200) {
@@ -38,34 +38,40 @@ function fetchText(url) {
         }
         let data = '';
         res.on('data', (chunk) => (data += chunk));
-        res.on('end', () => resolve(data));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error('Invalid JSON response'));
+          }
+        });
       })
       .on('error', reject);
   });
 }
 
 /**
- * 解析 hosts 文件内容为映射对象
- * @param {string} content
+ * 解析 GitHub520 JSON 格式为 hosts 映射
+ * 支持两种格式：
+ * 1. 对象格式：{ "github.com": "1.2.3.4" }
+ * 2. 数组格式：[{ "name": "github.com", "ip": "1.2.3.4" }]
+ * @param {object|Array} data
  * @returns {object} { domain: ip }
  */
-function parseHosts(content) {
+function parseHosts(data) {
   const hosts = {};
-  const lines = content.split('\n');
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // 跳过空行和注释
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    // 匹配 IP 和域名
-    const match = trimmed.match(/^(\d+\.\d+\.\d+\.\d+)\s+(.+)$/);
-    if (match) {
-      const ip = match[1];
-      const domain = match[2].split(/\s+/)[0].toLowerCase();
-      if (domain) {
-        hosts[domain] = ip;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const domain = item.name || item.domain || item.host;
+      const ip = item.ip || item.address || item.value;
+      if (domain && ip) {
+        hosts[domain.toLowerCase()] = ip;
       }
+    }
+  } else {
+    for (const [domain, ip] of Object.entries(data)) {
+      hosts[domain.toLowerCase()] = ip;
     }
   }
 
@@ -107,8 +113,8 @@ async function main() {
   console.log(`Fetching hosts from ${GITHUB520_URL}...`);
 
   try {
-    const content = await fetchText(GITHUB520_URL);
-    const hosts = parseHosts(content);
+    const data = await fetchJson(GITHUB520_URL);
+    const hosts = parseHosts(data);
 
     console.log(`Parsed ${Object.keys(hosts).length} host entries`);
 
