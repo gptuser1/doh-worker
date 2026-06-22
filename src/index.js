@@ -6,10 +6,10 @@ import {
 } from './dns.js';
 import { STATIC_HOSTS, lookupHost, loadHostsFromKV } from './hosts.js';
 
-const GITHUB520_URL = 'https://raw.hellogithub.com/hosts';
+const GITHUB520_URL = 'https://raw.githubusercontent.com/521xueweihan/GitHub520/main/hosts.json';
 
 /**
- * 从 GitHub520 拉取并解析 hosts
+ * 从 GitHub520 拉取并解析 hosts（JSON 格式）
  * @returns {Promise<object>} hosts 映射
  */
 async function fetchGitHub520Hosts() {
@@ -17,20 +17,28 @@ async function fetchGitHub520Hosts() {
   if (!response.ok) {
     throw new Error(`Failed to fetch GitHub520: ${response.status}`);
   }
-  const text = await response.text();
-  const hosts = {};
+  const data = await response.json();
 
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^(\d+\.\d+\.\d+\.\d+)\s+(.+)$/);
-    if (match) {
-      const ip = match[1];
-      const domain = match[2].split(/\s+/)[0].toLowerCase();
-      if (domain) hosts[domain] = ip;
+  // 支持两种格式：
+  // 1. 对象格式：{ "github.com": "1.2.3.4" }
+  // 2. 数组格式：[{ "name": "github.com", "ip": "1.2.3.4" }]
+  if (Array.isArray(data)) {
+    const hosts = {};
+    for (const item of data) {
+      const domain = item.name || item.domain || item.host;
+      const ip = item.ip || item.address || item.value;
+      if (domain && ip) {
+        hosts[domain.toLowerCase()] = ip;
+      }
     }
+    return hosts;
   }
 
+  // 对象格式，直接转小写 key
+  const hosts = {};
+  for (const [domain, ip] of Object.entries(data)) {
+    hosts[domain.toLowerCase()] = ip;
+  }
   return hosts;
 }
 
