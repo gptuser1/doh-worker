@@ -1,0 +1,21 @@
+name = "doh-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# 上游 DoH 服务器（阿里公共 DNS，国内最稳定）
+[vars]
+UPSTREAM_DOH = "https://dns.alidns.com/dns-query"
+DOH_PATH = "/dns-query"
+# 手动同步接口鉴权 token
+SYNC_TOKEN = "K19zzu23!"
+
+# KV 命名空间（用于存储自定义 hosts）
+# 部署后替换为实际 KV ID
+# [[kv_namespaces]]
+# binding = "HOSTS_KV"
+# id = "your-kv-namespace-id"
+
+# 定时触发器（Cron Triggers）
+# 每 6 小时从 GitHub520 同步最新 hosts 到 KV
+[triggers]
+crons = ["0 */6 * * *"]
