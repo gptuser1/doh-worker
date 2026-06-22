@@ -1,7 +1,7 @@
 name = "doh-worker"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = []
 
 # 上游 DoH 服务器（阿里公共 DNS，国内最稳定）
 [vars]

@@ -9,9 +9,7 @@
     "deploy": "wrangler deploy",
     "sync-hosts": "node scripts/sync-hosts.js"
   },
-  "dependencies": {
-    "dns-packet": "^5.6.1"
-  },
+  "dependencies": {},
   "devDependencies": {
     "wrangler": "^3.0.0"
   }
