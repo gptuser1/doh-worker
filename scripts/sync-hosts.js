@@ -52,9 +52,10 @@ function fetchJson(url) {
 
 /**
  * 解析 GitHub520 JSON 格式为 hosts 映射
- * 支持两种格式：
+ * 支持三种格式：
  * 1. 对象格式：{ "github.com": "1.2.3.4" }
- * 2. 数组格式：[{ "name": "github.com", "ip": "1.2.3.4" }]
+ * 2. 对象数组：[{ "name": "github.com", "ip": "1.2.3.4" }]
+ * 3. 二维数组：[ ["1.2.3.4", "github.com"] ]
  * @param {object|Array} data
  * @returns {object} { domain: ip }
  */
@@ -63,8 +64,18 @@ function parseHosts(data) {
 
   if (Array.isArray(data)) {
     for (const item of data) {
-      const domain = item.name || item.domain || item.host;
-      const ip = item.ip || item.address || item.value;
+      let domain, ip;
+
+      if (Array.isArray(item)) {
+        // 二维数组格式：[ip, domain]
+        ip = item[0];
+        domain = item[1];
+      } else {
+        // 对象数组格式
+        domain = item.name || item.domain || item.host;
+        ip = item.ip || item.address || item.value;
+      }
+
       if (domain && ip) {
         hosts[domain.toLowerCase()] = ip;
       }
