@@ -91,8 +91,13 @@ export function lookupHost(domain, staticHosts, kvHosts = null) {
   return bestMatch;
 }
 
+// 内存缓存配置
+let cachedHosts = null;
+let lastCacheTime = 0;
+const CACHE_TTL = 10 * 60 * 1000; // 缓存有效期 10 分钟
+
 /**
- * 从 KV 中加载 hosts 映射
+ * 从 KV 中加载 hosts 映射（带内存缓存）
  * 同时加载 GitHub520 同步的 gh_hosts_map 和 Cloudflare 优选 IP 的 cf_hosts_map
  * cf_hosts_map 优先级更高（本地测速结果更精准）
  * @param {KVNamespace} kv KV 命名空间
@@ -100,6 +105,13 @@ export function lookupHost(domain, staticHosts, kvHosts = null) {
  */
 export async function loadHostsFromKV(kv) {
   if (!kv) return {};
+
+  // 检查缓存是否有效
+  const now = Date.now();
+  if (cachedHosts && now - lastCacheTime < CACHE_TTL) {
+    return cachedHosts;
+  }
+
   try {
     // 并行加载两个 KV key
     const [githubHosts, cfHosts] = await Promise.all([
@@ -107,9 +119,16 @@ export async function loadHostsFromKV(kv) {
       kv.get('cf_hosts_map', { type: 'json' }),
     ]);
     // 合并，cf_hosts 优先级更高（后面的覆盖前面的）
-    return { ...(githubHosts || {}), ...(cfHosts || {}) };
+    const hosts = { ...(githubHosts || {}), ...(cfHosts || {}) };
+
+    // 更新缓存
+    cachedHosts = hosts;
+    lastCacheTime = now;
+
+    return hosts;
   } catch (e) {
     console.warn('Failed to load hosts from KV:', e);
-    return {};
+    // 加载失败时降级返回缓存数据
+    return cachedHosts || {};
   }
 }
