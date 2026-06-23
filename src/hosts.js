@@ -93,15 +93,21 @@ export function lookupHost(domain, staticHosts, kvHosts = null) {
 
 /**
  * 从 KV 中加载 hosts 映射
+ * 同时加载 GitHub520 同步的 hosts_map 和 Cloudflare 优选 IP 的 cf_hosts_map
+ * cf_hosts_map 优先级更高（本地测速结果更精准）
  * @param {KVNamespace} kv KV 命名空间
  * @returns {Promise<object>} hosts 映射对象
  */
 export async function loadHostsFromKV(kv) {
   if (!kv) return {};
-
   try {
-    const data = await kv.get('hosts_map', { type: 'json' });
-    return data || {};
+    // 并行加载两个 KV key
+    const [githubHosts, cfHosts] = await Promise.all([
+      kv.get('hosts_map', { type: 'json' }),
+      kv.get('cf_hosts_map', { type: 'json' }),
+    ]);
+    // 合并，cf_hosts 优先级更高（后面的覆盖前面的）
+    return { ...(githubHosts || {}), ...(cfHosts || {}) };
   } catch (e) {
     console.warn('Failed to load hosts from KV:', e);
     return {};
