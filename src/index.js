@@ -65,7 +65,7 @@ async function syncHostsToKV(kv) {
   const hosts = await fetchGitHub520Hosts();
   const updatedAt = new Date().toISOString();
 
-  await kv.put('hosts_map', JSON.stringify(hosts), {
+  await kv.put('gh_hosts_map', JSON.stringify(hosts), {
     metadata: { updated_at: updatedAt },
   });
 
