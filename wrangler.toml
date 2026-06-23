@@ -16,6 +16,6 @@ binding = "HOSTS_KV"
 id = "959a56eadf0040ae86ed0bc017056a8c"
 
 # 定时触发器（Cron Triggers）
-# 每 6 小时从 GitHub520 同步最新 hosts 到 KV
+# 每 1 小时从 GitHub520 同步最新 hosts 到 KV
 [triggers]
-crons = ["0 */6 * * *"]
+crons = ["0 * * * *"]
