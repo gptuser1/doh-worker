@@ -2,6 +2,8 @@ import {
   extractDnsQuery,
   decodeDnsQuery,
   buildAResponse,
+  buildSingleQuery,
+  parseARecords,
   forwardToUpstream,
 } from './dns.js';
 import { STATIC_HOSTS, lookupHost, loadHostsFromKV } from './hosts.js';
@@ -76,6 +78,64 @@ async function syncHostsToKV(kv) {
 }
 
 /**
+ * JSON 接口处理（Google/Cloudflare 风格 dns-json）
+ * GET /dns-query?name=github.com&type=A
+ * 命中 hosts 时返回自定义 IP；未命中时转发上游并解析 A 记录。
+ * @param {URL} url
+ * @param {object} env
+ * @returns {Promise<Response>} application/dns-json 响应
+ */
+async function handleJsonQuery(url, env) {
+  const name = url.searchParams.get('name').toLowerCase().replace(/\.$/, '');
+  const type = (url.searchParams.get('type') || 'A').toUpperCase();
+  const typeCode = type === 'AAAA' ? 28 : type === 'CNAME' ? 5 : 1;
+
+  const queryBuffer = buildSingleQuery(name, type);
+  const query = decodeDnsQuery(queryBuffer);
+  const question = query.questions?.[0];
+
+  const answer = [];
+  let custom = false;
+
+  if (question && type === 'A') {
+    const kvHosts = await loadHostsFromKV(env.HOSTS_KV);
+    const customIp = lookupHost(name, STATIC_HOSTS, kvHosts);
+
+    if (customIp) {
+      custom = true;
+      answer.push({ name: `${name}.`, type: 1, TTL: 300, data: customIp });
+    } else {
+      try {
+        const buf = await forwardToUpstream(queryBuffer, env.UPSTREAM_DOH, 'POST');
+        for (const ip of parseARecords(buf)) {
+          answer.push({ name: `${name}.`, type: 1, TTL: 300, data: ip });
+        }
+      } catch (e) {
+        console.warn('JSON upstream query failed:', e.message);
+      }
+    }
+  }
+
+  const body = {
+    Status: answer.length ? 0 : 3, // 无答案视为 NXDOMAIN
+    TC: false,
+    RD: true,
+    RA: true,
+    AD: false,
+    CD: false,
+    Question: [{ name, type: typeCode }],
+    Answer: answer,
+  };
+
+  return new Response(JSON.stringify(body), {
+    headers: {
+      'Content-Type': 'application/dns-json',
+      'X-Custom-Host': custom ? 'true' : 'false',
+    },
+  });
+}
+
+/**
  * Cloudflare Worker 入口
  *
  * 环境变量（wrangler.toml 中配置）：
@@ -104,12 +164,13 @@ export default {
         return new Response('Method Not Allowed', { status: 405 });
       }
 
-      // 鉴权：如果配置了 SYNC_TOKEN，则验证
-      if (env.SYNC_TOKEN) {
+      // 鉴权：从绑定的 secret 读取 token，配置了才验证
+      const syncToken = await env.SYNC_TOKEN?.get();
+      if (syncToken) {
         const token =
           request.headers.get('x-sync-token') ||
           url.searchParams.get('token');
-        if (token !== env.SYNC_TOKEN) {
+        if (token !== syncToken) {
           return new Response('Unauthorized', { status: 401 });
         }
       }
@@ -145,6 +206,12 @@ export default {
     // 仅处理 DoH 路径
     if (url.pathname !== dohPath) {
       return new Response('Not Found', { status: 404 });
+    }
+
+    // JSON 接口（Google/Cloudflare 风格）：GET ?name=&type=，返回 application/dns-json。
+    // 与 RFC 8484 wire format 并存，方便调试。
+    if (url.searchParams.get('name')) {
+      return await handleJsonQuery(url, env);
     }
 
     try {

@@ -244,6 +244,69 @@ export function buildAResponse(query, ip, ttl = 300) {
 }
 
 /**
+ * 构造单条 DNS 查询报文（用于 JSON 接口：从域名/类型构造 wire query）
+ * @param {string} name 域名
+ * @param {string} type 记录类型（A/AAAA/CNAME）
+ * @returns {Uint8Array} DNS 查询报文
+ */
+export function buildSingleQuery(name, type = 'A') {
+  const header = new Uint8Array(12);
+  writeUInt16BE(header, 0, 0x1234); // ID
+  writeUInt16BE(header, 2, 0x0100); // RD
+  writeUInt16BE(header, 4, 1); // QDCOUNT
+  writeUInt16BE(header, 6, 0); // ANCOUNT
+  writeUInt16BE(header, 8, 0); // NSCOUNT
+  writeUInt16BE(header, 10, 0); // ARCOUNT
+
+  const qname = encodeDomainName(name);
+  const typeCode = type === 'AAAA' ? 28 : type === 'CNAME' ? 5 : 1;
+  const tail = new Uint8Array(4);
+  writeUInt16BE(tail, 0, typeCode); // QTYPE
+  writeUInt16BE(tail, 2, 1); // QCLASS IN
+
+  const buf = new Uint8Array(header.length + qname.length + tail.length);
+  buf.set(header, 0);
+  buf.set(qname, header.length);
+  buf.set(tail, header.length + qname.length);
+  return buf;
+}
+
+/**
+ * 解析 DNS 响应报文，提取全部 A 记录 IP
+ * @param {Uint8Array} buffer 上游返回的 DNS 响应
+ * @returns {string[]} A 记录 IP 列表
+ */
+export function parseARecords(buffer) {
+  if (!buffer || buffer.length < 12) return [];
+  const ancount = readUInt16BE(buffer, 6);
+  const qdcount = readUInt16BE(buffer, 4);
+  if (ancount === 0) return [];
+
+  let offset = 12;
+  // 跳过 Question 区
+  for (let i = 0; i < qdcount; i++) {
+    const { offset: newOffset } = parseDomainName(buffer, offset);
+    if (newOffset + 4 > buffer.length) return [];
+    offset = newOffset + 4; // type + class
+  }
+
+  const ips = [];
+  for (let i = 0; i < ancount; i++) {
+    if (offset >= buffer.length) break;
+    const { offset: typeOffset } = parseDomainName(buffer, offset);
+    if (typeOffset + 10 > buffer.length) break;
+    const rtype = readUInt16BE(buffer, typeOffset);
+    const rdlength = readUInt16BE(buffer, typeOffset + 8);
+    const rdataOffset = typeOffset + 10;
+    if (rtype === 1 && rdlength === 4) {
+      ips.push(`${buffer[rdataOffset]}.${buffer[rdataOffset + 1]}.${buffer[rdataOffset + 2]}.${buffer[rdataOffset + 3]}`);
+    }
+    offset = rdataOffset + rdlength;
+  }
+  return ips;
+}
+
+/**
  * 构造 NXDOMAIN 响应（域名不存在）
  * @param {object} query
  * @returns {Uint8Array}

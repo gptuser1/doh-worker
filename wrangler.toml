@@ -2,13 +2,18 @@ name = "doh-worker"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = []
+workers_dev = false
 
 # 上游 DoH 服务器（阿里公共 DNS，国内最稳定）
 [vars]
 UPSTREAM_DOH = "https://dns.alidns.com/dns-query"
 DOH_PATH = "/dns-query"
-# 手动同步接口鉴权 token
-SYNC_TOKEN = "yourtoken"
+
+# 手动同步接口鉴权 token（通过 Secrets Store 绑定注入，不在明文配置）
+[[secrets_store_secrets]]
+store_id = "4cac25c20606481c9e202263d45a1d03"
+binding = "SYNC_TOKEN"
+secret_name = "0xffff"
 
 # KV 命名空间（用于存储自定义 hosts）
 [[kv_namespaces]]
